@@ -1,0 +1,6 @@
+.venv
+exp/*
+notebooks/*
+data/*
+fig/*
+nohup.out
