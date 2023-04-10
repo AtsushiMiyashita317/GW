@@ -1,1 +1,1 @@
-import gw.layers as layers
+from gw.base import GW
