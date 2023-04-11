@@ -1,5 +1,5 @@
 import torch
-import base
+import gw.base as base
 
 class stgw_impl(torch.autograd.Function):
     @staticmethod
