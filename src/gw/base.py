@@ -62,7 +62,7 @@ class GW:
         ).real
     
     @staticmethod
-    def map(signal:torch.Tensor, exp_size:int=None, pad:int=0, sr=256) -> torch.Tensor:
+    def map(signal:torch.Tensor, exp_size:int=None, pad:int=0, sr=1) -> torch.Tensor:
         """Create GW map from GW signal
 
         Args:
