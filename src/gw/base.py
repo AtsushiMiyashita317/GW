@@ -35,7 +35,7 @@ class GW:
         b = spectrogram.size()[:-2]
         spectrogram = spectrogram.flatten(end_dim=-3)
         spectrogram[:,:,0] = spectrogram.real[:,:,0]
-        spectrogram[:,:,1:] = spectrogram[:,:,1:].div(torch.arange(1,f))
+        spectrogram[:,:,1:] = spectrogram[:,:,1:].div(torch.arange(1,f,device=spectrogram.device))
         signal = torch.fft.irfft(spectrogram,dim=-1)
         signal = F.pad(signal, [0,1])
         signal = F.fold(signal,output_size=(1,t),kernel_size=(1,t),padding=(0,f-1))*2*f
