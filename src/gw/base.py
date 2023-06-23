@@ -1,6 +1,19 @@
 import torch
 import torch.nn.functional as F
 
+import matrix_exp
+
+class mexp(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x):
+        ctx.save_for_backward(x)
+        return matrix_exp.forward(x, 2048)
+    
+    @staticmethod
+    def backward(ctx, grad):
+        x, = ctx.saved_tensors
+        return matrix_exp.backward(x, grad, 2048)
+
 class GW:
     @staticmethod
     def algebra(w:torch.Tensor, dim:int):
@@ -18,7 +31,7 @@ class GW:
     def element(w: torch.Tensor, exp_size:int) -> torch.Tensor:
         if exp_size is None:
             exp_size = w.size(-1)*2-1
-        return torch.matrix_exp(GW.algebra(w, exp_size))
+        return mexp.apply(GW.algebra(w, exp_size))
     
     @staticmethod
     def spectrogram_to_signal(spectrogram: torch.Tensor):

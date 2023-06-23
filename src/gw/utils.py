@@ -26,7 +26,7 @@ class LPF(torch.nn.Module):
             x.stride()[:-1] + (x.stride(-1), x.stride(-1))
         ).matmul(self.filter)
 
-def interpolate(x:torch.Tensor, ilens:torch.Tensor, olens:torch.Tensor):
+def interpolate(x:torch.Tensor, ilens:torch.Tensor, olens:torch.Tensor, mode='linear'):
     """interpolate input batchwise
 
     Args:
@@ -48,12 +48,17 @@ def interpolate(x:torch.Tensor, ilens:torch.Tensor, olens:torch.Tensor):
     # (B, T_o)
     idx = scales.mul(otime)
     idx[otime>=olens[:,None]] = -2
-    # (B, T_o)
-    idx0 = idx.floor().long()
-    # (B, T_o)
-    idx1 = idx0 + 1
-    # (B, T_o, 1)
-    t = (idx - idx0)[:,:,None]
-    # (B, T_o, F)
-    y = (1-t)*x[batch,idx0] + t*x[batch,idx1]
-    return y
+    if mode == 'linear':
+        # (B, T_o)
+        idx0 = idx.floor().long()
+        # (B, T_o)
+        idx1 = idx0 + 1
+        # (B, T_o, 1)
+        t = (idx - idx0)[:,:,None]
+        # (B, T_o, F)
+        y = (1-t)*x[batch,idx0] + t*x[batch,idx1]
+        return y
+    elif mode == 'nearest':
+        idx0 = idx.round().long()
+        y = x[batch, idx0]
+        return y
