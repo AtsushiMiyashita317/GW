@@ -58,7 +58,9 @@ class GW:
 
     @staticmethod        
     def signal_to_spectrum(signal:torch.Tensor, pad:int) -> torch.Tensor:
-        signal = F.pad(signal,(pad,pad))
+        p = torch.linspace(0,1,pad,device=signal.device)
+        signal = torch.cat([p*signal[...,0:1],signal,p.flip([0])*signal[...,-2:-1]],dim=-1)
+        # signal = F.pad(signal,(pad,pad))
         n = signal.size(-1)//2
         return torch.fft.fft(signal,dim=-1)[...,torch.arange(-n,n+1,device=signal.device)]
     
