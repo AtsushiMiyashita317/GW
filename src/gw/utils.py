@@ -82,3 +82,25 @@ def interpolate(x:torch.Tensor, ilens:torch.Tensor, olens:torch.Tensor, mode='li
         y = x.new_zeros((x.size(0), max_olen+2, x.size(2)))
         y[batch, idx0] = x[:,:-2]
         return y[:,:-2]
+
+def average(y:torch.Tensor, ilens:torch.Tensor, olens:torch.Tensor):
+    """interpolate input batchwise
+
+    Args:
+        x (torch.Tensor): (B, T_o, F)
+        ilens (torch.Tensor): (B,)
+        olens (torch.Tensor): (B,)
+    
+    Returns:
+        torch.Tensor: (B, T_i, F)
+    """
+    max_ilen = ilens.max().item()
+    max_olen = olens.max().item()
+    imask = torch.arange(max_ilen, device=y.device).unsqueeze(0)<ilens.unsqueeze(-1)
+    omask = torch.arange(max_olen, device=y.device).unsqueeze(0)<olens.unsqueeze(-1)
+    iidx = torch.arange(max_ilen, device=y.device).unsqueeze(0).expand(imask.size())
+    oidx = interpolate(iidx.unsqueeze(-1), ilens, olens, mode='nearest').squeeze(-1)
+    tlens = torch.zeros_like(imask, dtype=torch.long).scatter_add(1, oidx, omask.long())
+    tlens = tlens.masked_fill(imask.logical_not(), 1)
+    ret = torch.zeros_like(imask, dtype=y.dtype).scatter_add(1, oidx, y).div(tlens)
+    return ret
