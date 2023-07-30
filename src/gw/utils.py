@@ -102,5 +102,5 @@ def average(y:torch.Tensor, ilens:torch.Tensor, olens:torch.Tensor):
     oidx = interpolate(iidx.unsqueeze(-1), ilens, olens, mode='nearest').squeeze(-1)
     tlens = torch.zeros_like(imask, dtype=torch.long).scatter_add(1, oidx, omask.long())
     tlens = tlens.masked_fill(imask.logical_not(), 1)
-    ret = torch.zeros_like(imask, dtype=y.dtype).scatter_add(1, oidx, y).div(tlens)
-    return ret
+    ret = y.new_zeros(imask.size()+(y.size(-1),)).scatter_add(1, oidx.unsqueeze(-1), y)
+    return ret.div(tlens.unsqueeze(-1))
