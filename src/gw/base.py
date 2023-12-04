@@ -96,3 +96,61 @@ class GW:
             ), 
             signal.size(-1)+2*pad
         )[...,pad:pad+signal.size(-1),pad:pad+signal.size(-1)]
+
+@torch.jit.script
+def cubic_interpolation(s:torch.Tensor, x:torch.Tensor, a:float=-0.5):
+    """Cubic interpolation
+
+    Args:
+        s (torch.Tensor, (b,c,n)): input signal
+        x (torch.Tensor, (b,n)): coordinate
+        a (float, optional): Interpolation parameter. Defaults to -0.5.
+
+    Returns:
+        torch.Tensor, (b,c,n): interpolated signal
+    """
+    # (b,n)
+    x = torch.clamp(x, min=0, max=s.size(-1))
+    xi = x.floor()
+    xf = x - xi
+    # (b,n,4)
+    xi = xi.long().unsqueeze(-1) + torch.arange(4, device=s.device)
+    # (b,n,2)
+    d1 = torch.abs(xf.unsqueeze(-1) + torch.tensor([0,-1], device=s.device))
+    h1 = 1 - (a+3)*d1**2 + (a+2)*d1**3
+    d2 = torch.abs(xf.unsqueeze(-1) + torch.tensor([1,-2], device=s.device))
+    h2 = -4*a + 8*a*d2 - 5*a*d2**2 + a*d2**3
+    # (b,n,4)
+    h = torch.stack([h2[:,:,0],h1[:,:,0],h1[:,:,1],h2[:,:,1]], dim=-1)
+    # (b,1,1,1)
+    b = torch.arange(s.size(0), device=s.device).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+    # (1,c,1,1)
+    c = torch.arange(s.size(1), device=s.device).unsqueeze(-1).unsqueeze(-1).unsqueeze(0)
+    # (b,1,n,4)
+    xi = xi.unsqueeze(1)
+    s = torch.nn.functional.pad(s, [1,4])
+    return torch.einsum("icjk,ijk->icj", s[b,c,xi], h)
+
+@torch.jit.script
+def gw(s:torch.Tensor, m:int=4):
+    """General
+
+    Args:
+        s (torch.Tensor, (b,n)): GW signal
+        m (int, optional): Number of iteration. Defaults to 4.
+
+    Returns:
+        torch.Tensor, (b,n): warping function
+    """
+    # (b,n)
+    f = torch.arange(s.size(-1), device=s.device).expand_as(s)
+    # (b,1,n)
+    s = s.unsqueeze(1)
+    for _ in range(m):
+        # (b,n)
+        k1 = cubic_interpolation(s, f).squeeze(1).div(m)
+        k2 = cubic_interpolation(s, f+k1/2).squeeze(1).div(m)
+        k3 = cubic_interpolation(s, f+k2/2).squeeze(1).div(m)
+        k4 = cubic_interpolation(s, f+k3).squeeze(1).div(m)
+        f = f + (k1+2*k2+2*k3+k4)/6
+    return f
