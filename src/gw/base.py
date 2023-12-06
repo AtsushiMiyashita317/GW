@@ -97,7 +97,6 @@ class GW:
             signal.size(-1)+2*pad
         )[...,pad:pad+signal.size(-1),pad:pad+signal.size(-1)]
 
-@torch.jit.script
 def cubic_interpolation(s:torch.Tensor, x:torch.Tensor, a:float=-0.5):
     """Cubic interpolation
 
@@ -128,11 +127,10 @@ def cubic_interpolation(s:torch.Tensor, x:torch.Tensor, a:float=-0.5):
     c = torch.arange(s.size(1), device=s.device).unsqueeze(-1).unsqueeze(-1).unsqueeze(0)
     # (b,1,n,4)
     xi = xi.unsqueeze(1)
-    s = torch.nn.functional.pad(s, [1,4])
+    s = torch.nn.functional.pad(s, [1,4], mode='replicate')
     return torch.einsum("icjk,ijk->icj", s[b,c,xi], h)
 
-@torch.jit.script
-def gw(s:torch.Tensor, m:int=4):
+def gw_ode(s:torch.Tensor, m:int=4):
     """General
 
     Args:
