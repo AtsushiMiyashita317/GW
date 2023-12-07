@@ -164,8 +164,12 @@ def bicubic_interpolation(s:torch.Tensor, z:torch.Tensor, a:float=-0.5):
     Returns:
         torch.Tensor (b,nx,ny): interpolated signal
     """
+    x = z[:,0]
+    y = z[:,1]
+    x = torch.clamp(x, min=0, max=s.size(-2))
+    y = torch.clamp(y, min=0, max=s.size(-1))
     # (b,2,nx,ny)
-    z = torch.clamp(z, min=0, max=s.size(-1))
+    z = torch.stack([x,y],dim=1)
     zi = z.floor()
     zf = z - zi
     # (b,2,nx,ny,4)
