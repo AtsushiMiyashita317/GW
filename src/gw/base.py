@@ -194,7 +194,7 @@ def bicubic_interpolation(s:torch.Tensor, z:torch.Tensor, a:float=-0.5):
     # (1,c,1,1,1,1)
     c = torch.arange(s.size(1), device=s.device).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).unsqueeze(0)
     # (b,c,nx,ny)
-    ps = torch.nn.functional.pad(s,(1,10,1,10))
+    ps = torch.nn.functional.pad(s,(1,10,1,10), mode='replicate')
     # (b,c,nx,ny)
     return torch.einsum("icjklm,ijkl,ijkm->icjk", ps[b,c,xi,yi], hx, hy)
 
