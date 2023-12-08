@@ -130,18 +130,20 @@ def cubic_interpolation(s:torch.Tensor, x:torch.Tensor, a:float=-0.5):
     s = torch.nn.functional.pad(s, [1,4], mode='replicate')
     return torch.einsum("icjk,ijk->icj", s[b,c,xi], h)
 
-def gw_ode(s:torch.Tensor, m:int=4):
+def gw_ode(s:torch.Tensor, f:torch.Tensor=None, m:int=4):
     """General
 
     Args:
         s (torch.Tensor, (b,n)): GW signal
+        f (torch.Tensor, (b,n), optional): Initial warping function
         m (int, optional): Number of iteration. Defaults to 4.
 
     Returns:
         torch.Tensor, (b,n): warping function
     """
     # (b,n)
-    f = torch.arange(s.size(-1), device=s.device).expand_as(s)
+    if f is None:
+        f = torch.arange(s.size(-1), device=s.device).expand_as(s)
     # (b,1,n)
     s = s.unsqueeze(1)
     for _ in range(m):
@@ -198,23 +200,25 @@ def bicubic_interpolation(s:torch.Tensor, z:torch.Tensor, a:float=-0.5):
     # (b,c,nx,ny)
     return torch.einsum("icjklm,ijkl,ijkm->icjk", ps[b,c,xi,yi], hx, hy)
 
-def gw2d(s:torch.Tensor, m:int=4):
+def gw2d(s:torch.Tensor, f:torch.Tensor=None, m:int=4):
     """General warping for 2d tensor
 
     Args:
         s (torch.Tensor, (b,2,nx,ny)): GW signal
+        f (torch.Tensor, (b,2,nx,ny), optional): Initial warping function
         m (int, optional): number of iteration. Defaults to 4.
 
     Returns:
         torch.Tensor, (b2,,nx,ny): sampled warping function
     """
-    # (nx,1)
-    fx = torch.arange(s.size(-2), device=s.device).unsqueeze(1)
-    # (1,ny)
-    fy = torch.arange(s.size(-1), device=s.device).unsqueeze(0)
-    fx, fy = torch.broadcast_tensors(fx, fy)
-    # (2,nx,ny) -> (b,2,nx,ny)
-    f = torch.stack([fx,fy], dim=0).unsqueeze(0).expand_as(s)
+    if f is None:
+        # (nx,1)
+        fx = torch.arange(s.size(-2), device=s.device).unsqueeze(1)
+        # (1,ny)
+        fy = torch.arange(s.size(-1), device=s.device).unsqueeze(0)
+        fx, fy = torch.broadcast_tensors(fx, fy)
+        # (2,nx,ny) -> (b,2,nx,ny)
+        f = torch.stack([fx,fy], dim=0).unsqueeze(0).expand_as(s)
     for _ in range(m):
         # (b,2,nx,ny)
         k1 = bicubic_interpolation(s, f).div(m)
