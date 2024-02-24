@@ -1,3 +1,4 @@
+from typing import Any
 import torch
 import torch.nn.functional as F
 
@@ -130,6 +131,39 @@ def cubic_interpolation(s:torch.Tensor, x:torch.Tensor, a:float=-0.5):
     s = torch.nn.functional.pad(s, [1,4], mode='replicate')
     return torch.einsum("icjk,ijk->icj", s[b,c,xi], h)
 
+def cubic_derivative(s:torch.Tensor, x:torch.Tensor, a:float=-0.5):
+    """Cubic interpolation
+
+    Args:
+        s (torch.Tensor, (b,c,n)): input signal
+        x (torch.Tensor, (b,n)): coordinate
+        a (float, optional): Interpolation parameter. Defaults to -0.5.
+
+    Returns:
+        torch.Tensor, (b,c,n): interpolated signal
+    """
+    # (b,n)
+    x = torch.clamp(x, min=0, max=s.size(-1))
+    xi = x.floor()
+    xf = x - xi
+    # (b,n,4)
+    xi = xi.long().unsqueeze(-1) + torch.arange(4, device=s.device)
+    # (b,n,2)
+    d1 = torch.abs(xf.unsqueeze(-1) + torch.tensor([0,-1], device=s.device))
+    h1 = -2*(a+3)*d1 + 3*(a+2)*d1**2
+    d2 = torch.abs(xf.unsqueeze(-1) + torch.tensor([1,-2], device=s.device))
+    h2 = 8*a - 10*a*d2 + 3*a*d2**2
+    # (b,n,4)
+    h = torch.stack([h2[:,:,0],h1[:,:,0],-h1[:,:,1],-h2[:,:,1]], dim=-1)
+    # (b,1,1,1)
+    b = torch.arange(s.size(0), device=s.device).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+    # (1,c,1,1)
+    c = torch.arange(s.size(1), device=s.device).unsqueeze(-1).unsqueeze(-1).unsqueeze(0)
+    # (b,1,n,4)
+    xi = xi.unsqueeze(1)
+    s = torch.cat([2*s[...,:1]-s[...,1:2],s,2*s[...,-1:]-s[...,-5:-1].flip([-1])], dim=-1)
+    return torch.einsum("icjk,ijk->icj", s[b,c,xi], h)
+
 def gw_ode(s:torch.Tensor, f:torch.Tensor=None, m:int=4):
     """General
 
@@ -227,3 +261,80 @@ def gw2d(s:torch.Tensor, f:torch.Tensor=None, m:int=4):
         k4 = bicubic_interpolation(s, f+k3).div(m)
         f = f + (k1+2*k2+2*k3+k4)/6
     return f
+
+class gw_impl(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx:Any, s:torch.Tensor, f0:torch.Tensor=None, m:int=4):
+        """General
+
+        Args:
+            s (torch.Tensor, (b,n)): GW signal
+            f (torch.Tensor, (b,n), optional): Initial warping function
+            m (int, optional): Number of iteration. Defaults to 4.
+
+        Returns:
+            torch.Tensor, (b,n): warping function
+        """
+        # (1,k,1)
+        k = torch.arange(s.size(-1)//2+1, device=s.device).mul(-2j*torch.pi/s.size(-1)).unsqueeze(0).unsqueeze(-1)
+        if f0 is None:
+            # (b,n)
+            f = torch.arange(s.size(-1), device=s.device).expand_as(s)
+        else:
+            f = f0
+        # (b,k,n)
+        fa = f.unsqueeze(1).mul(k).exp()
+        # (b,1,n)
+        s = s.unsqueeze(1)
+        for _ in range(m):
+            # (b,n)
+            k1 = cubic_interpolation(s, f          ).squeeze(1).div(m)
+            k2 = cubic_interpolation(s, f.add(k1/2)).squeeze(1).div(m)
+            k3 = cubic_interpolation(s, f.add(k2/2)).squeeze(1).div(m)
+            k4 = cubic_interpolation(s, f.add(k3  )).squeeze(1).div(m)
+            # (b,k,n)
+            k1a = cubic_derivative(s, f          ).mul(fa           ).add(f          .unsqueeze(1).mul(k).exp()).div(m)
+            k2a = cubic_derivative(s, f.add(k1/2)).mul(fa.add(k1a/2)).add(f.add(k1/2).unsqueeze(1).mul(k).exp()).div(m)
+            k3a = cubic_derivative(s, f.add(k2/2)).mul(fa.add(k2a/2)).add(f.add(k2/2).unsqueeze(1).mul(k).exp()).div(m)
+            k4a = cubic_derivative(s, f.add(k3  )).mul(fa.add(k3a  )).add(f.add(k3  ).unsqueeze(1).mul(k).exp()).div(m)
+            
+            f = f + (k1+2*k2+2*k3+k4)/6
+            fa = fa + (k1a+2*k2a+2*k3a+k4a)/6
+        fa = torch.fft.irfft(fa, dim=1, n=s.size(-1))/2
+        
+        if f0 is None:
+            ft = None
+        else:
+            dx = cubic_interpolation(s, f0).squeeze(1)
+            dy = cubic_interpolation(s, f).squeeze(1)
+            ft = (dx*dy+1e-10)/(dx*dx+1e-10)
+        
+        ctx.save_for_backward(fa, ft)
+        
+        return f
+    
+    @staticmethod
+    def backward(ctx:Any, df:torch.Tensor) -> Any:
+        fa, ft = ctx.saved_tensors
+        ds = torch.bmm(fa, df.unsqueeze(-1)).squeeze(-1)
+        g = fa.square().sum(-1)
+        ds = ds/g
+        
+        if ft is not None:
+            df0 = df*ft
+        else:
+            df0 = None
+        return ds, df0, None
+    
+def gw(s:torch.Tensor, f0:torch.Tensor=None, m:int=4):
+    """General Warping
+
+    Args:
+        s (torch.Tensor, (b,n)): GW signal
+        f (torch.Tensor, (b,n), optional): Initial warping function
+        m (int, optional): Number of iteration. Defaults to 4.
+
+    Returns:
+        torch.Tensor, (b,n): warping function
+    """   
+    return gw_impl.apply(s, f0, m)
