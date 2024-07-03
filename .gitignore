@@ -1,6 +1,8 @@
 .venv
+venv
 exp/*
 notebooks/*
 data/*
 fig/*
 nohup.out
+**/__pycache__/
