@@ -6,3 +6,4 @@ data/*
 fig/*
 nohup.out
 **/__pycache__/
+*.egg-info/

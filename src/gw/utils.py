@@ -1,106 +1,30 @@
 import torch
 
-class LPF(torch.nn.Module):
-    def __init__(self, window_size:int) -> None:
-        super().__init__()
-        self.window_size = window_size
-        filter = torch.fft.ifft(
-            1/torch.linspace(
-                -128,
-                128,
-                window_size+1
-            ).roll(
-                window_size//2,
-                0
-            ).square().add(1)
-        ).real.roll(
-            window_size//2,
-            0
-        )
-        self.register_buffer('filter', filter)
-        
-    def forward(self, x:torch.Tensor) -> torch.Tensor:
-        x = torch.nn.functional.pad(x,(self.window_size//2,self.window_size//2))
-        return x.as_strided(
-            x.size()[:-1] + (x.size(-1)-self.window_size, self.window_size+1),
-            x.stride()[:-1] + (x.stride(-1), x.stride(-1))
-        ).matmul(self.filter)
 
-def interpolate(x:torch.Tensor, ilens:torch.Tensor, olens:torch.Tensor, mode='linear'):
-    """interpolate input batchwise
+def make_pad_mask(lengths: torch.Tensor, max_len: int = None) -> torch.Tensor:
+    """Make mask tensor for padding
 
     Args:
-        x (torch.Tensor): (B, T_i, F)
-        ilens (torch.Tensor): (B,)
-        olens (torch.Tensor): (B,)
-    
-    Returns:
-        torch.Tensor: (B, T_o, F)
-    """
-    x = torch.nn.functional.pad(x, (0,0,0,2))
-    max_ilen = ilens.max().item()
-    max_olen = olens.max().item()
-    # (B, 1)
-    batch = torch.arange(x.size(0),device=x.device)[:,None]
-    if mode == 'linear':
-        # (B, 1)
-        scales = ((ilens-1)/(olens-1))[:,None]
-        # (1, T_o)
-        otime = torch.arange(max_olen,device=x.device)[None,:]
-        # (B, T_o)
-        idx = scales.mul(otime)
-        idx[otime>=olens[:,None]] = -2
-        # (B, T_o)
-        idx0 = idx.floor().long()
-        # (B, T_o)
-        idx1 = idx0 + 1
-        # (B, T_o, 1)
-        t = (idx - idx0)[:,:,None]
-        # (B, T_o, F)
-        y = (1-t)*x[batch,idx0] + t*x[batch,idx1]
-        return y
-    elif mode == 'nearest':
-        # (B, 1)
-        scales = ((ilens-1)/(olens-1))[:,None]
-        # (1, T_o)
-        otime = torch.arange(max_olen,device=x.device)[None,:]
-        # (B, T_o)
-        idx = scales.mul(otime)
-        idx[otime>=olens[:,None]] = -2
-        idx0 = idx.round().long()
-        y = x[batch, idx0]
-        return y
-    elif mode == 'zero':
-        # (B, 1)
-        scales = ((olens-1)/(ilens-1))[:,None]
-        # (1, T_i)
-        itime = torch.arange(max_ilen,device=x.device)[None,:]
-        # (B, T_i)
-        idx = scales.mul(itime)
-        idx[itime>=ilens[:,None]] = -2
-        idx0 = idx.floor().long()
-        y = x.new_zeros((x.size(0), max_olen+2, x.size(2)))
-        y[batch, idx0] = x[:,:-2]
-        return y[:,:-2]
+        lengths (torch.Tensor): Lengths of each sequence (batch,).
+        max_len (int, optional): Maximum length of sequences. Defaults to None.
 
-def average(y:torch.Tensor, ilens:torch.Tensor, olens:torch.Tensor):
-    """interpolate input batchwise
+    Returns:
+        torch.Tensor: Mask tensor for padding (batch, max_len).
+    """
+    if max_len is None:
+        max_len = int(lengths.max().item())
+    ids = torch.arange(max_len, device=lengths.device)
+    mask = (ids >= lengths.unsqueeze(-1))
+    return mask
+
+def make_non_pad_mask(lengths: torch.Tensor, max_len: int = None) -> torch.Tensor:
+    """Make mask tensor for non-padding
 
     Args:
-        x (torch.Tensor): (B, T_o, F)
-        ilens (torch.Tensor): (B,)
-        olens (torch.Tensor): (B,)
-    
+        lengths (torch.Tensor): Lengths of each sequence (batch,).
+        max_len (int, optional): Maximum length of sequences. Defaults to None.
+
     Returns:
-        torch.Tensor: (B, T_i, F)
+        torch.Tensor: Mask tensor for non-padding (batch, max_len).
     """
-    max_ilen = ilens.max().item()
-    max_olen = olens.max().item()
-    imask = torch.arange(max_ilen, device=y.device).unsqueeze(0)<ilens.unsqueeze(-1)
-    omask = torch.arange(max_olen, device=y.device).unsqueeze(0)<olens.unsqueeze(-1)
-    iidx = torch.arange(max_ilen, device=y.device).unsqueeze(0).expand(imask.size())
-    oidx = interpolate(iidx.unsqueeze(-1), ilens, olens, mode='nearest').squeeze(-1)
-    tlens = torch.zeros_like(imask, dtype=torch.long).scatter_add(1, oidx, omask.long())
-    tlens = tlens.masked_fill(imask.logical_not(), 1)
-    ret = y.new_zeros(imask.size()+(y.size(-1),)).scatter_add(1, oidx.unsqueeze(-1), y)
-    return ret.div(tlens.unsqueeze(-1))
+    return ~make_pad_mask(lengths, max_len)
