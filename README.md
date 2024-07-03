@@ -26,7 +26,7 @@ warping_predictor = torch.nn.Sequential(
 )
 
 ws = warping_predictor(xs)
-# warping
+# wWrping. Output size is (batch, channel, time)
 ys = warp(xs, ws, x_lengths)
 # When you want arignment map (batch, time_in, time_out)
 ys, att_ws = warp(xs, ws, x_lengths, return_att_w = True)
